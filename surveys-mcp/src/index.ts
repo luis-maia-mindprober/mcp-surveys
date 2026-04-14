@@ -5,10 +5,12 @@ import * as z from "zod";
 import {
   fetchAnswerFrequency,
   fetchBrandRecall,
+  fetchDataQuality,
   fetchHealth,
   fetchOpenTextAnswerFrequency,
   fetchQuestionFrequency,
   fetchSessionBrandFitReport,
+  fetchSessionInspect,
   fetchSessionInsights,
   fetchSessionQuestions,
   fetchSurveysBySession,
@@ -37,16 +39,19 @@ function buildServer(): McpServer {
     {
       instructions: `Use these tools to answer questions about TV survey sessions and response metrics.
 
+**Inspect (important):** If the user says **inspect**, **inspection**, **row counts per table**, **data coverage**, **check tables**, or **notebook-style** session checks — always use the tool **session_inspect** only. Do not substitute list_surveys_for_session or session_survey_insights for that; those are different (metadata vs aggregated metrics, not per-table DB row counts).
+
 Workflow:
 1. Call surveys_api_health if you need to confirm the local API is reachable.
 2. Call list_surveys_for_session with a numeric session_id to get survey definitions linked to that session (names, provider, URLs).
-3. Call session_survey_insights with the same session_id to get aggregated response counts, completion averages, timelines, and per-status breakdowns from survey_response_status.
+3. Call session_survey_insights with the same session_id to get aggregated response counts, completion averages, timelines, and per-status breakdowns from survey_response_status (not the same as session_inspect).
 4. Call session_questions to list all questions in a session with respondent counts — useful for discovering question_ids and qp_codes before drilling down.
 5. Call session_answer_frequency with session_ids and a question_id (or qp_code) to see how respondents answered that question. Works for single_choice, multiple_choice, open_ended, and matrix_single_choice.
 6. Call sessions_question_frequency with multiple session_ids to find which questions appear most often (by session coverage and respondent volume). Optionally filter by family.
 7. Call session_brand_recall to analyse free-text brand recall answers: provide brands[] to count specific brand mentions, or omit brands to get token frequency. Use question_text to target the right open_ended question (default matches "brand").
 8. Call session_brand_fit_report with comma-separated session_ids; optionally pass question_text and question_match_mode (exact | contains | similar) to restrict rows by survey_question.title. This tool only extracts Likert rows from brand-fit matrix phrases (EN/ES), not free-text recall.
 9. Call session_open_text_answer_frequency with comma-separated session_ids and required question_text (same title matching modes). Returns token_counts (comma-split answers in SurveyMonkey-style wrappers) and exact_answer_counts for open-ended recall questions.
+10. **session_inspect** — use whenever the user asks to **inspect** one or more sessions: comma-separated session_ids; returns row_counts_by_table (notebook-style). Same purpose as "inspect session" in natural language.
 
 Interpret results for the user: compare completion, spot duplicates, relate survey names to metrics, and highlight data gaps. Session IDs are opaque integers from your upstream systems.`,
     },
@@ -90,7 +95,7 @@ Interpret results for the user: compare completion, spot duplicates, relate surv
     "session_survey_insights",
     {
       description:
-        "Aggregated response metrics per survey for a session: counts, distinct testers, average completion %, time range, duplicate rows, and response_status breakdown (e.g. completed).",
+        "Aggregated response metrics per survey for a session: counts, distinct testers, average completion %, time range, duplicate rows, and response_status breakdown (e.g. completed). Not for 'inspect' / per-table row-count requests — use session_inspect instead.",
       inputSchema: {
         session_id: z.string().describe("Numeric session identifier, same as for list_surveys_for_session"),
       },
@@ -169,6 +174,37 @@ Interpret results for the user: compare completion, spot duplicates, relate surv
         return jsonResult({ error: "session_id must be a non-negative integer string" });
       }
       const { ok, status, body } = await fetchSessionQuestions(env, sid);
+      return jsonResult({ ok, status, body });
+    },
+  );
+
+  server.registerTool(
+    "session_inspect",
+    {
+      description:
+        "Use this tool whenever the user asks to **inspect** (or audit / check row counts / table coverage for) one or more sessions. Returns row_counts_by_table per DB table (like inspectSession.ipynb): mappings, questions, answers, response status/answers, and processed testers when the API has METRICS_DB_* configured. Natural-language 'inspect session X' maps here — not session_survey_insights.",
+      inputSchema: {
+        session_ids: z
+          .string()
+          .describe(
+            "Comma-separated numeric session IDs (e.g. 10743 or 10705,9989). Max 100 sessions.",
+          ),
+      },
+    },
+    async ({ session_ids }) => {
+      const parts = session_ids
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (parts.length === 0) {
+        return jsonResult({ error: "session_ids must list at least one integer" });
+      }
+      for (const p of parts) {
+        if (!/^\d+$/.test(p)) {
+          return jsonResult({ error: `invalid session_id token: ${p}` });
+        }
+      }
+      const { ok, status, body } = await fetchSessionInspect(env, parts);
       return jsonResult({ ok, status, body });
     },
   );
@@ -406,6 +442,41 @@ Interpret results for the user: compare completion, spot duplicates, relate surv
         tokenLimit: token_limit,
         exactAnswerLimit: exact_answer_limit,
       });
+      return jsonResult({ ok, status, body });
+    },
+  );
+
+  server.registerTool(
+    "session_data_quality",
+    {
+      description:
+        "Run data-quality / mapping-mismatch checks on the surveys schema (based on checkMappingMismatches.ipynb). Runs 8 referential-integrity checks: broken FKs in survey_question_mapping, survey_question, survey_response_answer, survey_response_status, session_survey_mapping, and orphaned survey_question rows. Optionally scoped to specific sessions via comma-separated session_ids; omit to run globally. Returns per-check status (ok/warning), broken_count, and sample rows.",
+      inputSchema: {
+        session_ids: z
+          .string()
+          .optional()
+          .describe(
+            "Optional comma-separated numeric session IDs to scope checks to specific sessions (e.g. '10743' or '10705,9989'). Omit to run globally across all data.",
+          ),
+      },
+    },
+    async ({ session_ids }) => {
+      let parts: string[] | null = null;
+      if (session_ids != null && session_ids.trim().length > 0) {
+        parts = session_ids
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+        if (parts.length === 0) {
+          return jsonResult({ error: "session_ids must list at least one integer when provided" });
+        }
+        for (const p of parts) {
+          if (!/^\d+$/.test(p)) {
+            return jsonResult({ error: `invalid session_id token: ${p}` });
+          }
+        }
+      }
+      const { ok, status, body } = await fetchDataQuality(env, parts);
       return jsonResult({ ok, status, body });
     },
   );

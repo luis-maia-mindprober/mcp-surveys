@@ -7,11 +7,13 @@ import Fastify from "fastify";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "../.env") });
 import { isRawDataDbConfigured, loadConfig } from "./config/env.js";
+import { createMetricsPool } from "./db/metrics-pg.js";
 import { createRawDataPool } from "./db/raw-data-pg.js";
 import { registerRoutes } from "./routes/index.js";
 
 const config = loadConfig();
 const rawDataPool = createRawDataPool(config);
+const metricsPool = createMetricsPool(config);
 
 const app = Fastify({ logger: true });
 
@@ -31,7 +33,7 @@ if (!isRawDataDbConfigured(config)) {
   });
 }
 
-registerRoutes(app, { config, rawDataPool });
+registerRoutes(app, { config, rawDataPool, metricsPool });
 
 try {
   await app.listen({ port: config.port, host: config.host });

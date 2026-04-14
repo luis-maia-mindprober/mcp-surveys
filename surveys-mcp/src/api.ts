@@ -218,6 +218,52 @@ export type BrandRecallOptions = {
   limit?: number;
 };
 
+export async function fetchDataQuality(
+  env: McpEnv,
+  sessionIds: string[] | null,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const headers = authHeaders(env);
+  headers.set("Content-Type", "application/json");
+  const payload: Record<string, unknown> = {};
+  if (sessionIds != null) {
+    payload.session_ids = sessionIds;
+  }
+  const res = await fetch(joinUrl(env.apiBaseUrl, "/v1/data-quality/check"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = text;
+  }
+  return { ok: res.ok, status: res.status, body };
+}
+
+export async function fetchSessionInspect(
+  env: McpEnv,
+  sessionIds: string[],
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const headers = authHeaders(env);
+  headers.set("Content-Type", "application/json");
+  const res = await fetch(joinUrl(env.apiBaseUrl, "/v1/sessions/inspect"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ session_ids: sessionIds }),
+  });
+  const text = await res.text();
+  let body: unknown;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = text;
+  }
+  return { ok: res.ok, status: res.status, body };
+}
+
 export async function fetchBrandRecall(
   env: McpEnv,
   sessionIds: string[],
