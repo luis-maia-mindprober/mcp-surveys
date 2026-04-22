@@ -4,8 +4,6 @@ import { extractApiKey, safeKeyCompare } from "../config/mcp-auth.js";
 import type { RawDataPool } from "../db/raw-data-pg.js";
 import { runDataQuality } from "../services/data-quality.js";
 
-const MAX_SESSION_IDS = 100;
-
 export function registerDataQualityRoutes(
   app: FastifyInstance,
   config: AppConfig,
@@ -39,11 +37,6 @@ export function registerDataQualityRoutes(
       if (!Array.isArray(rawIds) || rawIds.length === 0) {
         return reply.status(400).send({
           error: "session_ids must be a non-empty array of non-negative integers when provided",
-        });
-      }
-      if (rawIds.length > MAX_SESSION_IDS) {
-        return reply.status(400).send({
-          error: `session_ids must contain at most ${MAX_SESSION_IDS} entries`,
         });
       }
       sessionIds = [];

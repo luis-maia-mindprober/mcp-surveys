@@ -13,6 +13,10 @@ Stdio MCP server that calls the local **mcp-surveys** API so the assistant can l
 |----------|---------|-------------|
 | `SURVEYS_API_BASE_URL` | `http://127.0.0.1:8080` (local) / `http://host.docker.internal:8080` (Docker) | API origin (no trailing slash) |
 | `SURVEYS_API_KEY` | _(empty)_ | Must match `MCP_API_KEY` on the API when that is set |
+| `QUESTIONPRO_API_BASE_URL` | _(empty)_ | QuestionPro API **origin only** (no trailing slash), e.g. `https://api.questionpro.eu`. Do not include `/a/api/v2` (the code appends it; `loadEnv()` also strips that suffix if pasted by mistake). Required for **questionpro_question_answers**. |
+| `QUESTIONPRO_API_KEY` | _(empty)_ | QuestionPro REST API key (sent as the `api-key` header) — required for **questionpro_question_answers** |
+
+**Note:** Cursor passes only the `env` block from MCP settings into the process—`surveys-mcp/.env` is **not** loaded automatically (unlike `api/` with dotenv). Copy QuestionPro vars into the MCP config or export them in the shell before `node dist/index.js`.
 
 ## Local (Node)
 
@@ -113,6 +117,9 @@ Then in **Cursor Settings → MCP**, disable and re-enable (or restart) the `sur
 ### Connectivity
 - **surveys_api_health** — `GET /health` — verify the API is reachable before other calls
 
+### Session discovery
+- **list_sessions** — `GET /v1/sessions` — discover available sessions (session_id, survey_name, provider, URL); supports pagination (`limit`/`offset`) and optional `survey_name` (substring) / `provider` filters. **Start here** when you don't know the session_id.
+
 ### Session metadata
 - **list_surveys_for_session** — `GET /v1/surveys?session_id=…` — surveys linked to a session (name, provider, URL, timestamps)
 - **session_survey_insights** — `GET /v1/sessions/:sessionId/insights` — aggregated response counts, distinct testers, avg completion %, time range, duplicate rows, status breakdown
@@ -120,7 +127,16 @@ Then in **Cursor Settings → MCP**, disable and re-enable (or restart) the `sur
 ### Questions & answers
 - **session_questions** — `GET /v1/sessions/:sessionId/questions` — all questions in a session with family, qp_code, order, respondent count
 - **session_answer_frequency** — `POST /v1/sessions/answer-frequency` — choice/matrix answer distribution for a question; filter by `qp_code` or `question_id`, optional `filter_status`
+- **questionpro_question_answers** — QuestionPro REST `GET /a/api/v2/surveys/{survey_id}/questions/{question_id}/answers` — live answers from QuestionPro (requires `QUESTIONPRO_API_BASE_URL` + `QUESTIONPRO_API_KEY`); not the warehouse API
 - **sessions_question_frequency** — `POST /v1/sessions/question-frequency` — which questions appear most across multiple sessions; optional family filter
+- **sessions_compare_answers** — `POST /v1/sessions/compare-answers` — side-by-side comparison of how 2+ sessions answered the same question (`qp_code`); returns a unified table with count and % per session
+
+### Engagement & completion
+- **session_completion_funnel** — `GET /v1/sessions/:sessionId/completion-funnel` — question-by-question drop-off: respondents, total_testers, completion_pct, drop_off_pct for each question in order
+- **session_response_timeline** — `GET /v1/sessions/:sessionId/response-timeline?bucket=hour|day` — time-series of response arrivals bucketed by hour or day; useful for live TV events
+
+### Per-respondent
+- **session_tester_answers** — `GET /v1/sessions/:sessionId/tester/:testerId/answers` — all answers from a specific tester with question title, family, qp_code, order, and timing; use for auditing or debugging a respondent
 
 ### Brand analysis
 - **session_brand_recall** — `POST /v1/sessions/brand-recall` — free-text brand recall token counts or specific brand mention counts
@@ -129,6 +145,7 @@ Then in **Cursor Settings → MCP**, disable and re-enable (or restart) the `sur
 
 ### Data quality & inspection
 - **session_inspect** — `POST /v1/sessions/inspect` — notebook-style row counts per DB table for one or more sessions (like `inspectSession.ipynb`); includes `testers_session_information (processed)` when `METRICS_DB_*` is configured
+- **session_duplicate_testers** — `POST /v1/sessions/duplicate-testers` — lists the specific testers flagged as duplicates (`is_duplicate = true`) with their response_count and response_status_ids; use after `session_survey_insights` shows non-zero `duplicate_rows`
 - **session_data_quality** — `POST /v1/data-quality/check` — referential-integrity checks across the `surveys` schema (like `checkMappingMismatches.ipynb`); optional `session_ids` to scope, omit for global scan
 
   Checks run:

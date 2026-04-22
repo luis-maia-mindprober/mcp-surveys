@@ -7,11 +7,17 @@ import { registerHealthRoutes } from "./health.js";
 import { registerSessionAnswerFrequencyRoutes } from "./session-answer-frequency.js";
 import { registerSessionBrandFitReportRoutes } from "./session-brand-fit-report.js";
 import { registerSessionBrandRecallRoutes } from "./session-brand-recall.js";
+import { registerSessionCompletionFunnelRoutes } from "./session-completion-funnel.js";
+import { registerSessionDuplicateTestersRoutes } from "./session-duplicate-testers.js";
 import { registerSessionInsightsRoutes } from "./session-insights.js";
 import { registerSessionInspectRoutes } from "./session-inspect.js";
 import { registerSessionOpenTextFrequencyRoutes } from "./session-open-text-frequency.js";
 import { registerSessionQuestionFrequencyRoutes } from "./session-question-frequency.js";
 import { registerSessionQuestionsRoutes } from "./session-questions.js";
+import { registerSessionResponseTimelineRoutes } from "./session-response-timeline.js";
+import { registerSessionTesterAnswersRoutes } from "./session-tester-answers.js";
+import { registerSessionsCompareAnswersRoutes } from "./sessions-compare-answers.js";
+import { registerSessionsRoutes } from "./sessions.js";
 import { registerSurveysRoutes } from "./surveys.js";
 
 export type RouteDeps = {
@@ -32,4 +38,10 @@ export function registerRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerSessionBrandRecallRoutes(app, deps.config, deps.rawDataPool);
   registerSessionInspectRoutes(app, deps.config, deps.rawDataPool, deps.metricsPool);
   registerDataQualityRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionsRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionDuplicateTestersRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionCompletionFunnelRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionsCompareAnswersRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionResponseTimelineRoutes(app, deps.config, deps.rawDataPool);
+  registerSessionTesterAnswersRoutes(app, deps.config, deps.rawDataPool);
 }
